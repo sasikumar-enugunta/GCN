@@ -2,16 +2,13 @@ from __future__ import division
 from __future__ import print_function
 
 import time
-import random
 import argparse
-import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.autograd import Variable
 
-from utils import load_data, accuracy
-from models import GAT
+from sklearn.model_selection import train_test_split
+from model2 import GAT2
+from utils2 import load_data, prepare_sequence, compare, load_edge_embed_data
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -26,100 +23,115 @@ parser.add_argument('--dropout', type=float, default=0.1, help='Dropout rate (1 
 parser.add_argument('--alpha', type=float, default=0.2, help='Alpha for the leaky_relu.')
 parser.add_argument('--patience', type=int, default=100, help='Patience')
 
-parser.add_argument('--embedding_dim', type=int, default=50, help='Number of hidden units in LSTM layer.')
-parser.add_argument('--feats', type=int, default=338, help='Number of hidden units.')
-parser.add_argument('--hidden1', type=int, default=40, help='Number of hidden units.')
-parser.add_argument('--hidden2', type=int, default=30, help='Number of hidden units.')
-parser.add_argument('--hidden3', type=int, default=20, help='Number of hidden units.')
-parser.add_argument('--hidden4', type=int, default=10, help='Number of hidden units.')
+parser.add_argument('--embedding_dim', type=int, default=500, help='Number of hidden units in LSTM layer.')
+parser.add_argument('--hidden1', type=int, default=256, help='Number of hidden units.')
+parser.add_argument('--hidden2', type=int, default=128, help='Number of hidden units.')
+parser.add_argument('--hidden3', type=int, default=64, help='Number of hidden units.')
+parser.add_argument('--hidden4', type=int, default=32, help='Number of hidden units.')
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
-# random.seed(args.seed)
-# np.random.seed(args.seed)
-# torch.manual_seed(args.seed)
-# if args.cuda:
-#     torch.cuda.manual_seed(args.seed)
-
-# Load data
-adj, features, labels, idx_train, idx_val, idx_test = load_data()
-print(adj.shape, features.shape, labels.shape)
+idx_features_labels, word_to_ix, tag_to_ix = load_data()
+edge_embeddings = load_edge_embed_data()
+# print(len(idx_features_labels), len(word_to_ix), len(tag_to_ix))
 
 # Model and optimizer
-model = GAT(
-            nfeat=args.feats,
+model = GAT2(
+            nfeat=len(word_to_ix),
             nhid1=args.hidden1,
             nhid2=args.hidden2,
             nhid3=args.hidden3,
             nhid4=args.hidden4,
             embed=args.embedding_dim,
-            nclass=int(labels.max()) + 1,
+            tag_to_ix=tag_to_ix,
             dropout=args.dropout,
             alpha=args.alpha)
-optimizer = optim.Adam(model.parameters(), 
-                       lr=args.lr, 
+optimizer = optim.Adam(model.parameters(),
+                       lr=args.lr,
                        weight_decay=args.weight_decay)
 
-if args.cuda:
-    model.cuda()
-    features = features.cuda()
-    adj = adj.cuda()
-    labels = labels.cuda()
-    idx_train = idx_train.cuda()
-    idx_val = idx_val.cuda()
-    idx_test = idx_test.cuda()
-
-features, adj, labels = Variable(features), Variable(adj), Variable(labels)
+training_data, test_data = train_test_split(idx_features_labels, test_size=0.2, random_state=0)
+print('No. Documents : ', len(idx_features_labels), '\nNo. Words : ', len(word_to_ix), '\nNo. Tags : ', len(tag_to_ix),
+      '\nTrain Size : ', len(training_data), '\nTest Size : ', len(test_data), '\n==========================')
 
 
-def train(epoch):
-    t = time.time()
-    model.train()
-    optimizer.zero_grad()
-    output = model(features, adj)
-    # print(output[idx_train], labels[idx_train])
-    loss_train = F.nll_loss(output[idx_train], labels[idx_train])
-    acc_train = accuracy(output[idx_train], labels[idx_train], 0)
-    loss_train.backward()
-    optimizer.step()
+def train(epochs):
+    for epoch in range(epochs):
+        print('Epoch: {:04d}'.format(epoch+1))
+        t = time.time()
+        count = 1
 
-    if not args.fastmode:
-        # Evaluate validation set performance separately,
-        # deactivates dropout during validation run.
-        model.eval()
-        output = model(features, adj)
+        for ids, sentence, tags, bold, underline, color in training_data:
+            model.zero_grad()
+            sentence_in = prepare_sequence(sentence, word_to_ix)
 
-    loss_val = F.nll_loss(output[idx_val], labels[idx_val])
-    acc_val = accuracy(output[idx_val], labels[idx_val], 0)
+            new_tags = {}
+            for i in range(len(ids)):
+                if ids[i] not in new_tags:
+                    new_tags[ids[i]] = tags[i]
 
-    print('Epoch: {:04d}'.format(epoch+1),
-          'loss_train: {:.4f}'.format(loss_train.data.item()),
-          'acc_train: {:.4f}'.format(acc_train.data.item()),
-          'loss_val: {:.4f}'.format(loss_val.data.item()),
-          'acc_val: {:.4f}'.format(acc_val.data.item()),
-          'time: {:.4f}s'.format(time.time() - t))
+            new_tag_list = list(new_tags.values())
+
+            targets = torch.tensor([tag_to_ix[t] for t in new_tag_list], dtype=torch.long)
+
+            ids_int = [int(i) for i in ids]
+            df1 = edge_embeddings.loc[edge_embeddings['src'].isin(ids_int)]
+            new_df = df1[['src', 'hori_dist', 'vert_dist', 'ar_one', 'ar_two', 'ar_three', 'dest']]
+
+            loss = model.neg_log_likelihood(ids_int, sentence_in, targets, new_df)
+
+            loss.backward()
+            optimizer.step()
+
+            if count % 100 == 0:
+                print("Iteration %d : loss %f " % (count, loss))
+            count += 1
+            
+        print('time: {:.4f}s'.format(time.time() - t))
 
 
 def compute_test():
-    model.eval()
-    output = model(features, adj)
-    print(labels[idx_test])
-    loss_test = F.nll_loss(output[idx_test], labels[idx_test])
-    acc_test = accuracy(output[idx_test], labels[idx_test], 1)
-    print("Test set results:",
-          "loss= {:.4f}".format(loss_test.item()),
-          "accuracy= {:.4f}".format(acc_test.item()))
+    sumloss = 0
+    with torch.no_grad():
+        for pair in test_data[0:10]:
+            ids = pair[0]
+            sentence = pair[1]
+            tag = pair[2]
+
+            new_tags = {}
+            for i in range(len(ids)):
+                if ids[i] not in new_tags:
+                    new_tags[ids[i]] = tag[i]
+
+            new_tag_list = list(new_tags.values())
+
+            ids_int = [int(i) for i in ids]
+            df1 = edge_embeddings.loc[edge_embeddings['src'].isin(ids_int)]
+            new_df = df1[['src', 'hori_dist', 'vert_dist', 'ar_one', 'ar_two', 'ar_three', 'dest']]
+
+            precheck_sent = prepare_sequence(sentence, word_to_ix)
+            precheck_tags = torch.tensor([tag_to_ix[t] for t in new_tag_list], dtype=torch.long)
+            score, y_pred = model(ids_int, precheck_sent, new_df)
+
+            print("Actual : ", list(precheck_tags.numpy()))
+            print("Predct : ", y_pred)
+            errorindex = compare(precheck_tags, y_pred)
+            sumloss = sumloss + (len(errorindex) / len(precheck_tags))
+            accuracy = (len(precheck_tags) - len(errorindex)) / len(precheck_tags)
+            print('Loss = {:.4f}'.format((len(errorindex) / len(precheck_tags))))
+            print("Error_indices : ", errorindex)
+            print('Accuracy = {:.4f}'.format(accuracy))
+            print("====================")
+
+        print('Total Loss : ', sumloss / len(test_data))
 
 
-epochs = 10
-# Train model
+epochs = 3
 t_total = time.time()
-for epoch in range(epochs):
-    train(epoch)
+train(epochs)
 
 print("Optimization Finished!")
 print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
-# Testing
 compute_test()
