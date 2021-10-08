@@ -64,7 +64,10 @@ def train(epochs):
 
         for ids, sentence, tags, bold, underline, color in training_data:
             model.zero_grad()
-            sentence_in = prepare_sequence(sentence, word_to_ix)
+            sentence_padded = prepare_sequence(sentence, word_to_ix)
+            bold_padded = prepare_sequence(bold, word_to_ix)
+            underline_padded = prepare_sequence(underline, word_to_ix)
+            color_padded = prepare_sequence(color, word_to_ix)
 
             new_tags = {}
             for i in range(len(ids)):
@@ -78,8 +81,12 @@ def train(epochs):
             ids_int = [int(i) for i in ids]
             df1 = edge_embeddings.loc[edge_embeddings['src'].isin(ids_int)]
             new_df = df1[['src', 'hori_dist', 'vert_dist', 'ar_one', 'ar_two', 'ar_three', 'dest']]
+            
+            numpy_df = new_df.to_numpy()
+            numpy_edges = numpy_df[:, 1:6]
+            edges_list = torch.FloatTensor(numpy_edges)
 
-            loss = model.neg_log_likelihood(ids_int, sentence_in, targets, new_df)
+            loss = model.neg_log_likelihood(ids_int, sentence_padded, targets, edges_list)
 
             loss.backward()
             optimizer.step()
@@ -93,11 +100,14 @@ def train(epochs):
 
 def compute_test():
     sumloss = 0
+    nb_classes = 7
+    confusion_matrix = torch.zeros(nb_classes, nb_classes)
     with torch.no_grad():
-        for pair in test_data[0:10]:
-            ids = pair[0]
-            sentence = pair[1]
-            tag = pair[2]
+        for ids, sentence, tags, bold, underline, color in test_data
+            sentence_padded = prepare_sequence(sentence, word_to_ix)
+            bold_padded = prepare_sequence(bold, word_to_ix)
+            underline_padded = prepare_sequence(underline, word_to_ix)
+            color_padded = prepare_sequence(color, word_to_ix)
 
             new_tags = {}
             for i in range(len(ids)):
@@ -105,29 +115,35 @@ def compute_test():
                     new_tags[ids[i]] = tag[i]
 
             new_tag_list = list(new_tags.values())
+            
+            targets = torch.tensor([tag_to_ix[t] for t in new_tag_list], dtype=torch.long)
 
             ids_int = [int(i) for i in ids]
             df1 = edge_embeddings.loc[edge_embeddings['src'].isin(ids_int)]
             new_df = df1[['src', 'hori_dist', 'vert_dist', 'ar_one', 'ar_two', 'ar_three', 'dest']]
-
-            precheck_sent = prepare_sequence(sentence, word_to_ix)
-            precheck_tags = torch.tensor([tag_to_ix[t] for t in new_tag_list], dtype=torch.long)
-            score, y_pred = model(ids_int, precheck_sent, new_df)
-
-            print("Actual : ", list(precheck_tags.numpy()))
+            
+            numpy_df = new_df.to_numpy()
+            numpy_edges = numpy_df[:, 1:6]
+            edges_list = torch.FloatTensor(numpy_edges)
+            
+            score, y_pred = model(ids_int, sentence_padded, edges_list)
+            pred = torch.tensor(y_pred)
+            for t, p in zip(targets.view(-1), pred.view(-1)):
+                confusion_matrix[t.long(), p.long()] += 1
+            print("Actual : ", list(targets.numpy()))
             print("Predct : ", y_pred)
-            errorindex = compare(precheck_tags, y_pred)
-            sumloss = sumloss + (len(errorindex) / len(precheck_tags))
-            accuracy = (len(precheck_tags) - len(errorindex)) / len(precheck_tags)
-            print('Loss = {:.4f}'.format((len(errorindex) / len(precheck_tags))))
+            errorindex = compare(targets, y_pred)
+            sumloss = sumloss + (len(errorindex) / len(targets))
+            accuracy = (len(targets) - len(errorindex)) / len(targets)
+            print('Loss = {:.4f}'.format((len(errorindex) / len(targets))))
             print("Error_indices : ", errorindex)
             print('Accuracy = {:.4f}'.format(accuracy))
             print("====================")
 
         print('Total Loss : ', sumloss / len(test_data))
+    print(confusion_matrix)
 
-
-epochs = 3
+epochs = 10
 t_total = time.time()
 train(epochs)
 
