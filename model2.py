@@ -102,57 +102,35 @@ class GAT2(nn.Module):
         return path_score, best_path
 
     # Loss function loss
-    def neg_log_likelihood(self, ids, sentence, tags, new_df):
-        # print(sentence.shape)
-        graph_embed = self._get_graph_embedding(ids, sentence, new_df)
-        feats = self._get_lstm_features(ids, graph_embed, new_df)
-        # print('nll feats : ', feats.shape)
+    def neg_log_likelihood(self, ids, sentence, tags, edges_list):
+        graph_embed = self._get_graph_embedding(ids, sentence, edges_list)
+        feats = self._get_lstm_features(ids, graph_embed)
         forward_score = self._forward_alg(feats)
-        # print('nll forward_score : ', forward_score.shape)
         gold_score = self._score_sentence(feats, tags)
-        # print('nll gold_score : ', gold_score.shape)
         return forward_score - gold_score
 
-    def forward(self, ids, sentence, new_df):
-        graph_embed = self._get_graph_embedding(ids, sentence, new_df)
-        lstm_feats = self._get_lstm_features(ids, graph_embed, new_df)
-        # print('lstm_out : ', lstm_feats.shape)
+    def forward(self, ids, sentence, edges_list):
+        graph_embed = self._get_graph_embedding(ids, sentence, edges_list)
+        lstm_feats = self._get_lstm_features(ids, graph_embed)
         score, tag_seq = self._viterbi_decode(lstm_feats)
         return score, tag_seq
 
-    def _get_lstm_features(self, ids_int, sentence, new_df):
-        # print('Graph LSTM Features Function Started .. ', sentence.shape)
+    def _get_lstm_features(self, ids_int, sentence):
         self.hidden1 = self.init_hidden1()
-        # embeds = self.embed2(sentence).view(len(sentence), 1, -1)
-        # print(embeds.shape)
         embeds1 = sentence.unsqueeze(dim=1)
         lstm_out, self.hidden1 = self.lstm2(embeds1, self.hidden1)
-        # print(lstm_out.shape, self.hidden_dim4, len(sentence))
         lstm_out = lstm_out.view(len(sentence), self.hidden_dim4)
-        # print(lstm_out.shape)
         lstm_feats = self.hidden2tag(lstm_out)
-        # print('End of LSTM Features Function .. ')
         return lstm_feats
 
     def _get_graph_embedding(self, ids, sentence, new_df):
-        # print('Graph Embedding Function Started .. ', sentence.shape, sentence)
-
         self.hidden = self.init_hidden()
-        # print('hidden_shape : ', self.hidden[0].shape)
-
         embeds = self.embed1(sentence).view(len(sentence), 1, -1)
-        # print(embeds.shape, embeds)
         lstm_out, self.hidden = self.lstm1(embeds, self.hidden)
-        # print(lstm_out.shape)
         lstm_out = lstm_out.view(len(sentence), self.hidden_dim1)
-        # print('lstm_out : ', lstm_out.shape)
 
-        tij_rij = F.elu(self.gc1(ids, lstm_out, new_df, first=True))
-        # print('graph_out 1 : ', tij_rij.shape)
-        graph_out2 = F.elu(self.gc2(ids, tij_rij, new_df, first=False))
-        # print('graph_out 2 : ', graph_out2.shape)
-
-        # print('End of Graph Embedding Function .. ')
+        tij_rij = self.gc1(ids, lstm_out, new_df, first=True)
+        graph_out2 = self.gc2(ids, tij_rij, new_df, first=False)
 
         return graph_out2
 
