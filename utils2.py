@@ -71,8 +71,9 @@ def get_maximum_sequence_length(ids):
     return count
 
 
-def readFile(ner_file):
-    data = []
+def readFile1(ner_file):
+
+    data1 = []
 
     ids = []
     sentences = []
@@ -90,14 +91,23 @@ def readFile(ner_file):
     for i in ner_file.readlines():
         i = i.replace("\n", "")
         lst = i.split(",")
-
         if len(lst) == 6:
-            seq_id.append(lst[0])
-            seq_data.append(lst[1])
-            seq_label.append(lst[2])
-            seq_bold.append(lst[3])
-            seq_underline.append(lst[4])
-            seq_color.append(lst[5])
+            if len(lst[1]) == 1:
+                seq_id.append(lst[0])
+                seq_data.append(lst[1])
+                seq_label.append(lst[2])
+                seq_bold.append(lst[3])
+                seq_underline.append(lst[4])
+                seq_color.append(lst[5])
+            else:
+                seq_data.append(lst[1])
+                for k in range(len(lst[1].split(' '))):
+                    seq_id.append(lst[0])
+                    seq_label.append(lst[2])
+                    seq_bold.append(lst[3])
+                    seq_underline.append(lst[4])
+                    seq_color.append(lst[5])
+
         else:
             idx = " ".join(seq_id)
             seq_id.clear()
@@ -124,9 +134,9 @@ def readFile(ner_file):
             color.append(color_)
 
     for i in range(len(sentences)):
-        data.append((ids[i].split(), sentences[i].split(), labels[i].split(), bold[i].split(), underline[i].split(), color[i].split()))
+        data1.append((ids[i].split(), sentences[i].split(), labels[i].split(), bold[i].split(), underline[i].split(), color[i].split()))
 
-    return data
+    return data1
 
 
 def getVocab(idx_features_labels):
@@ -162,24 +172,16 @@ def getVocab(idx_features_labels):
     return word_to_ix, tag_to_ix
 
 
-def load_data(path="./data/invoice/", dataset="invoice"):
+def load_data(path="./data/invoice/new/", dataset="invoice"):
     """Load citation network dataset (cora only for now)"""
     print('Loading {} dataset...'.format(dataset))
-    ner_file = open("{}{}.final_ner_file".format(path, dataset), encoding="utf-8")
-    idx_features_labels = readFile(ner_file)
-    word_to_ix, tag_to_ix = getVocab(idx_features_labels)
+    ner_file = open("{}{}.final_feature_embeddings".format(path, dataset), encoding="utf-8")
+    idx_features_labels = readFile1(ner_file)
+    word_to_ix1, tag_to_ix = getVocab(idx_features_labels)
     return idx_features_labels, word_to_ix, tag_to_ix
 
 
-# def load_edge_embed(path, dataset, ids_int):
-#     edge_file = open("{}{}.final_edges_embed".format(path, dataset), encoding="utf-8")
-#     df = pd.read_csv(edge_file)
-#     df1 = df.loc[df['src'].isin(ids_int)]
-#     new_df = df1[['src', 'hori_dist', 'vert_dist', 'ar_one', 'ar_two', 'ar_three', 'dest']]
-#     return new_df
-
-
-def load_edge_embed_data(path="./data/invoice/", dataset="invoice"):
-    edge_file = open("{}{}.final_edges_embed".format(path, dataset), encoding="utf-8")
+def load_edge_embed_data(path="./data/invoice/new/", dataset="invoice"):
+    edge_file = open("{}{}.final_edge_embeddings".format(path, dataset), encoding="utf-8")
     df = pd.read_csv(edge_file)
     return df
