@@ -172,7 +172,7 @@ def getVocab(idx_features_labels):
     return word_to_ix, tag_to_ix
 
 
-def load_data(path="./data/invoice/new/", dataset="invoice"):
+def load_data(path="./data/invoice/", dataset="invoice"):
     """Load citation network dataset (cora only for now)"""
     print('Loading {} dataset...'.format(dataset))
     ner_file = open("{}{}.final_feature_embeddings".format(path, dataset), encoding="utf-8")
@@ -181,7 +181,7 @@ def load_data(path="./data/invoice/new/", dataset="invoice"):
     return idx_features_labels, word_to_ix, tag_to_ix
 
 
-def load_edge_embed_data(path="./data/invoice/new/", dataset="invoice"):
+def load_edge_embed_data(path="./data/invoice/", dataset="invoice"):
     edge_file = open("{}{}.final_edge_embeddings".format(path, dataset), encoding="utf-8")
     df = pd.read_csv(edge_file)
     return df
