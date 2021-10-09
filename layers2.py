@@ -23,7 +23,7 @@ class GraphAttentionLayer(nn.Module):
 
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
-    def forward(self, ids, lstm_out, new_df, first):
+    def forward(self, ids, lstm_out, edges_list, first):
         if first:
 
             lstm_dict = {}
@@ -53,23 +53,21 @@ class GraphAttentionLayer(nn.Module):
             attention = torch.where(adj > 0, node_edge_embeddings, zero_vec)
             attention = F.softmax(attention, dim=1)
             attention = F.dropout(attention, self.dropout, training=self.training)
-            h_prime = torch.mm(attention, wh)
+            alpha = torch.mm(attention, wh)
 
-            return h_prime
+            return alpha
 
         if not first:
             wh = self.leakyrelu(torch.mm(lstm_out, self.W))
             # wh = F.softmax(wh, dim=1)
             return wh
 
-    def _construct_node_edge_embeddings(self, wh, edges_list):
+    def _construct_node_edge_embeddings(self, wh, rij):
         n = wh.size()[0]
-        wh_repeated_in_chunks = wh.repeat_interleave(n, dim=0)
-        wh_repeated_alternating = wh.repeat(n, 1)
-        all_combinations_matrix = torch.cat([wh_repeated_in_chunks, edges_list, wh_repeated_alternating], dim=1)
-
-        node_edge_embeddings = self.leakyrelu(torch.matmul(all_combinations_matrix, self.a).squeeze(1))
-
+        ti = wh.repeat_interleave(n, dim=0)
+        tj = wh.repeat(n, 1)
+        hij = torch.cat([ti, rij, tj], dim=1)
+        node_edge_embeddings = self.leakyrelu(torch.matmul(hij, self.a).squeeze(1))
         return node_edge_embeddings.view(n, n)
         
     def __repr__(self):
